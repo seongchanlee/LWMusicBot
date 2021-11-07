@@ -1,0 +1,7 @@
+# IntelliJ files
+/.idea
+*.iml
+
+/target
+
+ec2-user@54.176.200.277
