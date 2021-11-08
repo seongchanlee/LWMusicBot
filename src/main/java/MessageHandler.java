@@ -160,6 +160,8 @@ public class MessageHandler extends ListenerAdapter {
 
         if (!audioManager.isConnected() && !audioManager.isAttemptingToConnect()) {
             audioManager.openAudioConnection(currChannel);
+            audioManager.setSelfMuted(false);
+            audioManager.setSelfDeafened(true);
         }
     }
 

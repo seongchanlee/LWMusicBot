@@ -48,11 +48,15 @@ public class TrackScheduler extends AudioEventAdapter {
         // giving null to startTrack, which is a valid argument and will simply stop the player.
         WrappedAudioTrack trackToPlay = queue.poll();
 
-        player.startTrack(trackToPlay.getAudioTrack(), false);
+        if (trackToPlay != null) {
+            player.startTrack(trackToPlay.getAudioTrack(), false);
 
-        trackToPlay.getAssociatedEvent()
-                .getChannel()
-                .sendMessage(getTrackPlayEmbed(trackToPlay)).queue();
+            trackToPlay.getAssociatedEvent()
+                    .getChannel()
+                    .sendMessage(getTrackPlayEmbed(trackToPlay)).queue();
+        } else {
+            player.startTrack(null, false);
+        }
     }
 
     @Override
