@@ -7,6 +7,7 @@ import com.sedmelluq.discord.lavaplayer.track.AudioPlaylist;
 import com.sedmelluq.discord.lavaplayer.track.AudioTrack;
 import model.Commands;
 import model.GuildMusicManager;
+import model.WrappedAudioTrack;
 import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.entities.Member;
 import net.dv8tion.jda.api.entities.TextChannel;
@@ -19,7 +20,12 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
+import static helper.EmbedHelper.getTrackQueueEmbed;
+
 public class MessageHandler extends ListenerAdapter {
+    private static final String X_EMOJI = "❌";
+    private static final String CHECK_EMOJI = "✅";
+
     private final AudioPlayerManager playerManager;
     private final Map<Long, GuildMusicManager> musicManagers;
 
@@ -51,8 +57,6 @@ public class MessageHandler extends ListenerAdapter {
 
         if ((Commands.BOT_PREFIX + Commands.PLAY).equals(command[0]) && command.length == 2) {
             loadAndPlay(event, command[1]);
-        } else if ((Commands.BOT_PREFIX + Commands.VOLUME).equals(command[0]) && command.length == 2) {
-            setVolume(event, command[1]);
         } else if ((Commands.BOT_PREFIX + Commands.SKIP).equals(command[0])) {
             skipTrack(event.getChannel());
         } else if ((Commands.BOT_PREFIX + Commands.LEAVE).equals(command[0])) {
@@ -66,82 +70,69 @@ public class MessageHandler extends ListenerAdapter {
         final TextChannel textChannel = event.getChannel();
         final GuildMusicManager musicManager = getGuildAudioPlayer(textChannel.getGuild());
 
+        if (!isUserInVoiceChannel(event)) {
+            textChannel.sendMessage(X_EMOJI + " | You need to be in a voice channel.").queue();
+            return;
+        }
+
         if (isBotConnected(event) && !isUserInTheSameVoiceChannel(event, event.getGuild().getAudioManager())) {
-            textChannel.sendMessage("You need to be in the same voice channel as the bot.").queue();
+            textChannel.sendMessage(X_EMOJI + " | You need to be in the same voice channel as the bot.").queue();
             return;
         }
 
         playerManager.loadItemOrdered(musicManager, trackUrl, new AudioLoadResultHandler() {
             @Override
             public void trackLoaded(AudioTrack track) {
+                WrappedAudioTrack wrappedAudioTrack = new WrappedAudioTrack(event, track);
 
-                textChannel.sendMessage("Adding to queue: " +
-                        track.getInfo().title).queue();
+                textChannel.sendMessage(getTrackQueueEmbed(wrappedAudioTrack)).queue();
 
-                play(event, musicManager, track);
+                play(event, musicManager, wrappedAudioTrack);
             }
 
             @Override
             public void playlistLoaded(AudioPlaylist playlist) {
-                AudioTrack firstTrack = playlist.getSelectedTrack();
+//                AudioTrack firstTrack = playlist.getSelectedTrack();
+//                WrappedAudioTrack wrappedFirstTrack = new WrappedAudioTrack(event, firstTrack);
+//
+//                if (firstTrack == null) {
+//                    firstTrack = playlist.getTracks().get(0);
+//                }
+//
+//                textChannel.sendMessage("Adding to queue: " +
+//                        firstTrack.getInfo().title + " (first track of playlist " + playlist.getName() + ")").queue();
+//
+//                play(event, musicManager, wrappedFirstTrack);
 
-                if (firstTrack == null) {
-                    firstTrack = playlist.getTracks().get(0);
-                }
-
-                textChannel.sendMessage("Adding to queue: " +
-                        firstTrack.getInfo().title + " (first track of playlist " + playlist.getName() + ")").queue();
-
-                play(event, musicManager, firstTrack);
+                textChannel.sendMessage(X_EMOJI + " | Playlist feature is disabled at the moment").queue();
             }
 
             @Override
             public void noMatches() {
-                textChannel.sendMessage("Nothing found by " + trackUrl).queue();
+                textChannel.sendMessage(X_EMOJI + " | Nothing found by " + trackUrl).queue();
             }
 
             @Override
             public void loadFailed(FriendlyException exception) {
-                textChannel.sendMessage("Could not play: " + exception.getMessage()).queue();
+                textChannel.sendMessage(X_EMOJI + " | Could not play: " + exception.getMessage()).queue();
             }
         });
     }
 
-    private void play(GuildMessageReceivedEvent event, GuildMusicManager musicManager, AudioTrack track) {
+    private void play(GuildMessageReceivedEvent event, GuildMusicManager musicManager, WrappedAudioTrack track) {
         connectToVoiceChannel(event, event.getGuild().getAudioManager());
 
         musicManager.scheduler.queue(track);
-    }
-
-    private void setVolume(GuildMessageReceivedEvent event, String volumeStr) {
-        TextChannel currTextChannel = event.getChannel();
-        int volumeInt;
-
-        try {
-            volumeInt = Integer.parseInt(volumeStr);
-        } catch (NumberFormatException e) {
-            currTextChannel.sendMessage("Please enter a number for the volume.").queue();
-            return;
-        }
-
-        if (volumeInt < 0 || volumeInt > 200) {
-            currTextChannel.sendMessage("Value for the volume must be between 0 and 200.").queue();
-        }
-
-        GuildMusicManager musicManager = getGuildAudioPlayer(currTextChannel.getGuild());
-        musicManager.player.setVolume(volumeInt);
-
-        currTextChannel.sendMessage("Volume set to "+ volumeStr +".").queue();
     }
 
     private void skipTrack(TextChannel channel) {
         GuildMusicManager musicManager = getGuildAudioPlayer(channel.getGuild());
 
         if (musicManager.player.getPlayingTrack() == null && musicManager.scheduler.isQueueEmpty()) {
-            channel.sendMessage("There are no tracks to skip.").queue();
+            channel.sendMessage(X_EMOJI + " | There are no tracks to skip.").queue();
         } else {
+            channel.sendMessage(CHECK_EMOJI + " | Skipped current track.").queue();
             musicManager.scheduler.nextTrack();
-            channel.sendMessage("Skipped current track.").queue();
         }
     }
 
@@ -149,7 +140,7 @@ public class MessageHandler extends ListenerAdapter {
         TextChannel currTextChannel = event.getChannel();
 
         if (!isBotConnected(event)) {
-            currTextChannel.sendMessage("Bot is not connected to any voice channel(s).").queue();
+            currTextChannel.sendMessage(X_EMOJI + " | Bot is not connected to any voice channel(s).").queue();
             return;
         }
 
@@ -161,7 +152,7 @@ public class MessageHandler extends ListenerAdapter {
         AudioManager currAudioManager = event.getGuild().getAudioManager();
         currAudioManager.closeAudioConnection();
 
-        currTextChannel.sendMessage("Bot has left the channel that it was connected to.").queue();
+        currTextChannel.sendMessage(CHECK_EMOJI + " | Bot has left the channel that it was connected to.").queue();
     }
 
     private static void connectToVoiceChannel(GuildMessageReceivedEvent event, AudioManager audioManager) {
@@ -200,5 +191,14 @@ public class MessageHandler extends ListenerAdapter {
         AudioManager currAudioManager = event.getGuild().getAudioManager();
 
         return currAudioManager.isConnected();
+    }
+
+    private boolean isUserInVoiceChannel(GuildMessageReceivedEvent event) {
+        final Member currMember = event.getMember();
+        assert currMember != null;
+
+        VoiceChannel memberVoiceChannel = Objects.requireNonNull(currMember.getVoiceState()).getChannel();
+
+        return memberVoiceChannel != null;
     }
 }
