@@ -12,24 +12,29 @@ import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.entities.Member;
 import net.dv8tion.jda.api.entities.TextChannel;
 import net.dv8tion.jda.api.entities.VoiceChannel;
+import net.dv8tion.jda.api.events.guild.voice.GuildVoiceLeaveEvent;
 import net.dv8tion.jda.api.events.message.guild.GuildMessageReceivedEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import net.dv8tion.jda.api.managers.AudioManager;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
 import static helper.EmbedHelper.getTrackQueueEmbed;
 
-public class MessageHandler extends ListenerAdapter {
+public class EventHandler extends ListenerAdapter {
     private static final String X_EMOJI = "❌";
     private static final String CHECK_EMOJI = "✅";
 
     private final AudioPlayerManager playerManager;
     private final Map<Long, GuildMusicManager> musicManagers;
 
-    public MessageHandler() {
+    private TextChannel lastlyInteractedTextChannel;
+
+    public EventHandler() {
         this.musicManagers = new HashMap<>();
 
         this.playerManager = new DefaultAudioPlayerManager();
@@ -52,13 +57,50 @@ public class MessageHandler extends ListenerAdapter {
     }
 
     @Override
+    public void onGuildVoiceLeave(@NotNull GuildVoiceLeaveEvent event) {
+        if (isBotConnected(event)) {
+            VoiceChannel voiceChannelThatUserLeft = event.getChannelLeft();
+            VoiceChannel connectedVoiceChannel = event.getGuild().getAudioManager().getConnectedChannel();
+
+            assert connectedVoiceChannel != null;
+
+            if (voiceChannelThatUserLeft.getId().equals(connectedVoiceChannel.getId())) {
+                List<Member> connectedUserList = connectedVoiceChannel.getMembers();
+
+                if (connectedUserList.size() < 2 || connectedUserList.stream()
+                                .filter(m -> m.getUser().isBot())
+                                .count() == connectedUserList.size()) {
+
+                    // Destroy the track
+                    GuildMusicManager currMusicManager = getGuildAudioPlayer(connectedVoiceChannel.getGuild());
+                    currMusicManager.player.destroy();
+
+                    // Disconnect
+                    AudioManager currAudioManager = event.getGuild().getAudioManager();
+                    currAudioManager.closeAudioConnection();
+
+                    if (lastlyInteractedTextChannel != null) {
+                        lastlyInteractedTextChannel
+                                .sendMessage(X_EMOJI + " | Nobody is in the voice channel, leaving...").queue();
+                    }
+                }
+            }
+        }
+
+        super.onGuildVoiceLeave(event);
+    }
+
+    // Handles incoming message
+    @Override
     public void onGuildMessageReceived(GuildMessageReceivedEvent event) {
         String[] command = event.getMessage().getContentRaw().split(" ", 2);
 
         if ((Commands.BOT_PREFIX + Commands.PLAY).equals(command[0]) && command.length == 2) {
             loadAndPlay(event, command[1]);
+            lastlyInteractedTextChannel = event.getChannel();
         } else if ((Commands.BOT_PREFIX + Commands.SKIP).equals(command[0])) {
             skipTrack(event.getChannel());
+            lastlyInteractedTextChannel = event.getChannel();
         } else if ((Commands.BOT_PREFIX + Commands.LEAVE).equals(command[0])) {
             leaveVoice(event);
         }
@@ -190,6 +232,12 @@ public class MessageHandler extends ListenerAdapter {
     }
 
     private boolean isBotConnected(GuildMessageReceivedEvent event) {
+        AudioManager currAudioManager = event.getGuild().getAudioManager();
+
+        return currAudioManager.isConnected();
+    }
+
+    private boolean isBotConnected(GuildVoiceLeaveEvent event) {
         AudioManager currAudioManager = event.getGuild().getAudioManager();
 
         return currAudioManager.isConnected();

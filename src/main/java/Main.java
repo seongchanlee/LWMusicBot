@@ -14,7 +14,7 @@ public class Main {
 
         JDABuilder builder = JDABuilder.createDefault(credential);
         builder.setActivity(Activity.listening("top of the morning"));
-        builder.addEventListeners(new MessageHandler());
+        builder.addEventListeners(new EventHandler());
         builder.build();
     }
 }
